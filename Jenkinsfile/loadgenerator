@@ -2,56 +2,56 @@ pipeline {
     agent any
 
     tools {
-        // Python already installed via system packages
         jdk 'jdk17'
     }
 
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
-        DOCKER_NAME  = 'harishnshetty/loadgenerator'
+        DOCKER_NAME  = 'gsathya7/loadgenerator'
         IMAGE_NAME   = 'loadgenerator'
-        PATH = "$PATH:/var/lib/jenkins/.local/bin"   // <-- Fix: add pip install path
+        PATH = "$PATH:/var/lib/jenkins/.local/bin"
     }
 
     stages {
+
         stage("Clean Workspace") {
-            steps { cleanWs() }
+            steps {
+                cleanWs()
+            }
         }
 
         stage("Git Checkout") {
             steps {
-                git branch: 'main', url: 'https://github.com/harishnshetty/Google-microservices-devsecops-project.git'
+                git branch: 'main', url: 'https://github.com/SathyaG7/Google-microservices-devsecops-project.git'
             }
         }
 
-        // --- SAST: Bandit ---
         stage("Bandit Security Scan") {
             steps {
                 dir('src/loadgenerator') {
                     sh '''
-                    python3 -m pip install --user --upgrade bandit
+                    python3 -m pip install --user --upgrade bandit || true
                     bandit -r . -f json -o bandit-report.json || true
                     '''
                 }
             }
             post {
                 always {
-                    archiveArtifacts 'src/loadgenerator/bandit-report.json'
+                    archiveArtifacts artifacts: 'src/loadgenerator/bandit-report.json', allowEmptyArchive: true
                 }
             }
         }
 
-        // --- SAST: SonarQube ---
         stage("SonarQube Analysis") {
             steps {
                 dir('src/loadgenerator') {
                     withSonarQubeEnv('sonar-server') {
                         sh '''
                         $SCANNER_HOME/bin/sonar-scanner \
-                          -Dsonar.projectKey=loadgenerator \
-                          -Dsonar.projectName=loadgenerator \
-                          -Dsonar.sources=. \
-                          -Dsonar.language=py
+                        -Dsonar.projectKey=loadgenerator \
+                        -Dsonar.projectName=loadgenerator \
+                        -Dsonar.sources=. \
+                        -Dsonar.language=py
                         '''
                     }
                 }
@@ -68,67 +68,71 @@ pipeline {
             }
         }
 
-        // --- Install Dependencies ---
         stage("Install Dependencies") {
             steps {
                 dir('src/loadgenerator') {
-                    sh 'python3 -m pip install --user -r requirements.txt || true'
+                    sh '''
+                    python3 -m pip install --user -r requirements.txt || true
+                    '''
                 }
             }
         }
 
-        // --- Dependency Scan (Safety) ---
         stage("Safety Dependency Scan") {
             steps {
                 dir('src/loadgenerator') {
                     sh '''
-                    python3 -m pip install --user safety
+                    python3 -m pip install --user safety || true
                     safety check --full-report --output json > safety-report.json || true
                     '''
                 }
             }
             post {
                 always {
-                    archiveArtifacts 'src/loadgenerator/safety-report.json'
+                    archiveArtifacts artifacts: 'src/loadgenerator/safety-report.json', allowEmptyArchive: true
                 }
             }
         }
 
-        // --- Trivy FS Scan ---
         stage("Trivy File Scan") {
             steps {
                 dir('src/loadgenerator') {
-                    sh 'trivy fs . --severity CRITICAL,HIGH --exit-code 1 --scanners vuln,misconfig,secret > trivy-fs-report.txt || true'
+                    sh '''
+                    trivy fs . \
+                    --severity CRITICAL,HIGH \
+                    --exit-code 1 \
+                    --scanners vuln,misconfig,secret \
+                    > trivy-fs-report.txt || true
+                    '''
                 }
             }
             post {
                 always {
-                    archiveArtifacts 'src/loadgenerator/trivy-fs-report.txt'
+                    archiveArtifacts artifacts: 'src/loadgenerator/trivy-fs-report.txt', allowEmptyArchive: true
                 }
             }
         }
 
-        // --- Build Docker Image ---
         stage("Build Docker Image") {
             steps {
                 dir('src/loadgenerator') {
                     script {
                         env.IMAGE_TAG = "$DOCKER_NAME:${BUILD_NUMBER}"
-                        sh "docker rmi -f $IMAGE_NAME ${env.IMAGE_TAG} || true"
+
+                        sh "docker rmi -f $IMAGE_NAME ${IMAGE_TAG} || true"
                         sh "docker build -t $IMAGE_NAME ."
-                        sh "docker tag $IMAGE_NAME ${env.IMAGE_TAG}"
+                        sh "docker tag $IMAGE_NAME ${IMAGE_TAG}"
                     }
                 }
             }
         }
 
-        // --- Push Docker Image ---
-        stage("Push to DockerHub") {
+        stage("Push Docker Image") {
             steps {
                 dir('src/loadgenerator') {
                     withCredentials([string(credentialsId: 'docker-cred', variable: 'dockerpwd')]) {
                         sh '''
-                        docker login -u harishnshetty -p ${dockerpwd}
+                        docker login -u gsathya7 -p ${dockerpwd}
                         docker push ${IMAGE_TAG}
                         docker tag ${IMAGE_NAME} ${DOCKER_NAME}:latest
                         docker push ${DOCKER_NAME}:latest
@@ -138,50 +142,21 @@ pipeline {
             }
         }
 
-        // --- Trivy Image Scan ---
-        stage("Trivy Scan Image") {
+        stage("Trivy Image Scan") {
             steps {
                 dir('src/loadgenerator') {
                     sh '''
-                    trivy image -f json -o trivy-image-email.json ${IMAGE_TAG}
-                    trivy image -f table -o trivy-image-email.txt ${IMAGE_TAG}
+                    trivy image -f json -o trivy-image-loadgenerator.json ${IMAGE_TAG}
+                    trivy image -f table -o trivy-image-loadgenerator.txt ${IMAGE_TAG}
                     '''
                 }
             }
             post {
                 always {
-                    archiveArtifacts 'src/loadgenerator/trivy-image-email.*'
+                    archiveArtifacts artifacts: 'src/loadgenerator/trivy-image-loadgenerator.*', allowEmptyArchive: true
                 }
             }
         }
-    }
 
-    // --- Final Notifications ---
-    post {
-        always {
-            dir('src/loadgenerator') {
-                script {
-                    def buildStatus = currentBuild.currentResult
-                    def buildUser = currentBuild.getBuildCauses('hudson.model.Cause$UserIdCause')[0]?.userId ?: ' Github User'
-
-                    emailext (
-                        subject: "Pipeline ${buildStatus}: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                        body: """
-                            <p>loadgenerator Google-Shop DevSecOps pipeline status.</p>
-                            <p>Youtube Link :- https://www.youtube.com/@devopsHarishNShetty </p>
-                            <p>Project: ${env.JOB_NAME}</p>
-                            <p>Build Number: ${env.BUILD_NUMBER}</p>
-                            <p>Build Status: ${buildStatus}</p>
-                            <p>Started by: ${buildUser}</p>
-                            <p>Build URL: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                        """,
-                        to: 'harishn662@gmail.com',
-                        from: 'harishn662@gmail.com',
-                        mimeType: 'text/html',
-                        attachmentsPattern: 'bandit-report.json,safety-report.json,trivy-fs-report.txt,trivy-image-email.json,trivy-image-email.txt'
-                    )
-                }
-            }
-        }
     }
 }
