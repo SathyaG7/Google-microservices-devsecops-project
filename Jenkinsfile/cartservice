@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     tools {
-        // .NET SDK configured in Jenkins global tools
-        dotnetsdk 'dotnet9'
+        // Use .NET 7 SDK for project build (matches net7.0 target)
+        dotnetsdk 'dotnet7'
     }
 
     environment {
@@ -23,7 +23,6 @@ pipeline {
             }
         }
 
-        // --- SAST: SonarQube for C# ---
         stage("SonarQube Analysis") {
             steps {
                 dir('src/cartservice') {
@@ -77,10 +76,10 @@ pipeline {
             steps {
                 dir('src/cartservice') {
                     catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                        dependencyCheck additionalArguments: ''' 
-                            --scan ./ 
-                            --format XML 
-                            --out dependency-check-report.xml 
+                        dependencyCheck additionalArguments: '''
+                            --scan ./
+                            --format XML
+                            --out dependency-check-report.xml
                         ''',
                         odcInstallation: 'dp-check'
                     }
