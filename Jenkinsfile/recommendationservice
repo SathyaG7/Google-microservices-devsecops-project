@@ -9,7 +9,6 @@ pipeline {
         SCANNER_HOME = tool 'sonar-scanner'
         DOCKER_NAME  = 'gsathya7/recommendationservice'
         IMAGE_NAME   = 'recommendationservice'
-        PATH = "$PATH:/var/lib/jenkins/.local/bin"
     }
 
     stages {
@@ -30,16 +29,13 @@ pipeline {
             steps {
                 dir('src/recommendationservice') {
                     sh '''
-                    python3 -m ensurepip --upgrade || true
-                    python3 -m pip install --user --upgrade pip || true
-                    python3 -m pip install --user bandit || true
                     bandit -r . -f json -o bandit-report.json || true
                     '''
                 }
             }
             post {
                 always {
-                    archiveArtifacts 'src/recommendationservice/bandit-report.json'
+                    archiveArtifacts artifacts: 'src/recommendationservice/bandit-report.json', allowEmptyArchive: true
                 }
             }
         }
@@ -74,7 +70,7 @@ pipeline {
             steps {
                 dir('src/recommendationservice') {
                     sh '''
-                    python3 -m pip install --user -r requirements.txt || true
+                    pip3 install -r requirements.txt || true
                     '''
                 }
             }
@@ -84,14 +80,13 @@ pipeline {
             steps {
                 dir('src/recommendationservice') {
                     sh '''
-                    python3 -m pip install --user safety || true
                     safety check --full-report --output json > safety-report.json || true
                     '''
                 }
             }
             post {
                 always {
-                    archiveArtifacts 'src/recommendationservice/safety-report.json'
+                    archiveArtifacts artifacts: 'src/recommendationservice/safety-report.json', allowEmptyArchive: true
                 }
             }
         }
@@ -100,17 +95,13 @@ pipeline {
             steps {
                 dir('src/recommendationservice') {
                     sh '''
-                    trivy fs . \
-                    --severity CRITICAL,HIGH \
-                    --exit-code 1 \
-                    --scanners vuln,misconfig,secret \
-                    > trivy-fs-report.txt || true
+                    trivy fs . --severity CRITICAL,HIGH --scanners vuln,misconfig,secret > trivy-fs-report.txt || true
                     '''
                 }
             }
             post {
                 always {
-                    archiveArtifacts 'src/recommendationservice/trivy-fs-report.txt'
+                    archiveArtifacts artifacts: 'src/recommendationservice/trivy-fs-report.txt', allowEmptyArchive: true
                 }
             }
         }
@@ -121,7 +112,6 @@ pipeline {
                     script {
                         env.IMAGE_TAG = "$DOCKER_NAME:${BUILD_NUMBER}"
 
-                        sh "docker rmi -f $IMAGE_NAME ${IMAGE_TAG} || true"
                         sh "docker build -t $IMAGE_NAME ."
                         sh "docker tag $IMAGE_NAME ${IMAGE_TAG}"
                     }
@@ -155,7 +145,7 @@ pipeline {
             }
             post {
                 always {
-                    archiveArtifacts 'src/recommendationservice/trivy-image-recommendation.*'
+                    archiveArtifacts artifacts: 'src/recommendationservice/trivy-image-recommendation.*', allowEmptyArchive: true
                 }
             }
         }
