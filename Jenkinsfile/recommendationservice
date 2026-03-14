@@ -30,7 +30,9 @@ pipeline {
             steps {
                 dir('src/recommendationservice') {
                     sh '''
-                    python3 -m pip install --user --upgrade bandit
+                    python3 -m ensurepip --upgrade || true
+                    python3 -m pip install --user --upgrade pip || true
+                    python3 -m pip install --user bandit || true
                     bandit -r . -f json -o bandit-report.json || true
                     '''
                 }
@@ -71,7 +73,9 @@ pipeline {
         stage("Install Dependencies") {
             steps {
                 dir('src/recommendationservice') {
-                    sh 'python3 -m pip install --user -r requirements.txt || true'
+                    sh '''
+                    python3 -m pip install --user -r requirements.txt || true
+                    '''
                 }
             }
         }
@@ -80,7 +84,7 @@ pipeline {
             steps {
                 dir('src/recommendationservice') {
                     sh '''
-                    python3 -m pip install --user safety
+                    python3 -m pip install --user safety || true
                     safety check --full-report --output json > safety-report.json || true
                     '''
                 }
